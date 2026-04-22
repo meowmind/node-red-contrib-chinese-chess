@@ -1,0 +1,234 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="utf-8">
+    <title>Chinese Chess for Node-RED</title>
+    <style>
+        body {
+            margin: 10px;
+            background: transparent;
+            font-family: sans-serif;
+        }
+        #chess-container {
+            text-align: center;
+        }
+        #info-panel {
+            margin-top: 10px;
+            padding: 8px;
+            background: #f5f5f5;
+            border-radius: 4px;
+            min-height: 20px;
+        }
+        .branch {
+            display: inline-block;
+            margin: 2px;
+            padding: 4px 8px;
+            border-radius: 4px;
+            cursor: pointer;
+        }
+        .branch-main {
+            background: #a6e22e;
+        }
+        .branch-soft {
+            background: #fd971f;
+        }
+        .branch-trap {
+            background: #f92672;
+        }
+        .branch-knife {
+            background: #ae81ff;
+        }
+    </style>
+</head>
+<body>
+    <div id="chess-container"></div>
+    <div id="info-panel"></div>
+
+    <script src="chinese-chess-core.js"></script>
+    <script>
+        (function() {
+            var container = document.getElementById('chess-container');
+            var infoPanel = document.getElementById('info-panel');
+            var game = null;
+            var renderer = null;
+            var nodeId = null;
+
+            // 从 URL 获取参数
+            var params = {};
+            window.location.search.substr(1).split('&').forEach(function(p) {
+                var parts = p.split('=');
+                params[parts[0]] = decodeURIComponent(parts[1]);
+            });
+            nodeId = params.nodeId;
+            var width = parseInt(params.width || 400, 10);
+            var height = parseInt(params.height || 400, 10);
+            var showControls = params.controls !== 'false';
+
+            // 初始化游戏
+            game = ChineseChess.createGame({
+                onEvent: function(event, data) {
+                    if (event === 'move' || event === 'back' || event === 'reset' || event === 'goto') {
+                        // 输出当前状态给 Node-RED（符合技术协议输出规范）
+                        if (window.parent && window.parent.postMessage) {
+                            window.parent.postMessage({
+                                type: 'node-red:chess:move',
+                                nodeId: nodeId,
+                                data: {
+                                    fen: game.getFEN(),
+                                    pgn: game.getPGN(),
+                                    currentStep: game.history.length,
+                                    totalSteps: game.history.length,
+                                    turn: game.history.length % 2 === 0 ? 'red' : 'black',
+                                    history: game.history
+                                }
+                            }, '*');
+                        }
+                    }
+                    updateInfo();
+                }
+            });
+
+            renderer = ChineseChess.createRenderer(game, container, {
+                size: width,
+                showControls: showControls,
+                onUserMove: function(fromX, fromY, toX, toY, moveStr) {
+                    // 用户走子后回调
+                    var success = game.move(fromX, fromY, toX, toY);
+                    if (success) {
+                        if (game.script) {
+                            var branch = game.matchBranch(moveStr);
+                            if (branch) {
+                                showBranches();
+                                if (branch.next) {
+                                    game.currentNode = getNodeById(game.script, branch.next);
+                                }
+                                updateInfo(branch.note);
+                            } else {
+                                updateInfo('未匹配剧本走法: ' + moveStr);
+                            }
+                        }
+                        renderer.render();
+                    }
+                }
+            });
+
+            game.reset();
+            renderer.render();
+
+            function getNodeById(script, id) {
+                if (!script || !script.nodes) return null;
+                return script.nodes.find(function(n) { return n.id === id; });
+            }
+
+            function updateInfo(text) {
+                if (text) {
+                    infoPanel.innerHTML = '<strong>提示:</strong> ' + text;
+                } else {
+                    infoPanel.innerHTML = '<strong>步数:</strong> ' + game.history.length + ', <strong>轮到:</strong> ' + (game.history.length % 2 === 0 ? '红方' : '黑方');
+                }
+            }
+
+            function showBranches() {
+                if (!game.currentNode || !game.currentNode.branches) return;
+                var html = '<div><strong>可选分支:</strong></div>';
+                game.currentNode.branches.forEach(function(b) {
+                    var cls = 'branch branch-' + (b.type || 'main');
+                    html += '<span class="' + cls + '" data-move="' + b.move + '">' + (b.label || b.type) + ': ' + (b.note || '') + '</span>';
+                });
+                infoPanel.innerHTML = html;
+                // 绑定点击事件
+                infoPanel.querySelectorAll('.branch').forEach(function(el) {
+                    el.addEventListener('click', function() {
+                        var moveStr = el.getAttribute('data-move');
+                        var m = ChineseChess.parseMoveStr(moveStr);
+                        if (m) {
+                            game.move(m.fromX, m.fromY, m.toX, m.toY);
+                            renderer.render();
+                        }
+                    });
+                });
+            }
+
+            // 接收来自 Node-RED 的消息（技术协议）
+            window.addEventListener('message', function(event) {
+                var data = event.data;
+                // 兼容旧格式
+                if (data.type && data.type.startsWith('node-red:chess:')) {
+                    // 旧格式转换
+                    var action = data.type.replace('node-red:chess:', '').toLowerCase();
+                    switch (action) {
+                        case 'loadscript':
+                            if (data.script) {
+                                game.script = data.script;
+                                game.reset();
+                            }
+                            break;
+                        case 'domove':
+                            if (data.move) {
+                                var m = ChineseChess.parseMoveStr(data.move);
+                                if (m) game.move(m.fromX, m.fromY, m.toX, m.toY);
+                            }
+                            break;
+                        case 'reset':
+                            game.reset();
+                            break;
+                        case 'back':
+                            game.back();
+                            break;
+                    }
+                    renderer.render();
+                    return;
+                }
+
+                // 新技术协议：{ action: '...', ... }
+                if (data.action) {
+                    switch (data.action) {
+                        case 'load':
+                            if (data.pgn) {
+                                // 加载 PGN 并解析走棋
+                                var result = game.loadPGN(data.pgn);
+                                updateInfo('已加载 PGN，共 ' + result.total + ' 步，成功解析 ' + result.success + ' 步');
+                            } else if (data.script) {
+                                game.script = data.script;
+                                game.reset();
+                                updateInfo('已加载剧本');
+                            }
+                            break;
+
+                        case 'next':
+                            game.next();
+                            break;
+
+                        case 'prev':
+                            game.back();
+                            break;
+
+                        case 'goto':
+                            if (typeof data.step === 'number') {
+                                game.goto(data.step);
+                            }
+                            break;
+
+                        case 'move':
+                            if (data.from && data.to) {
+                                game.move(
+                                    parseInt(data.from[0], 10),
+                                    parseInt(data.from[1], 10),
+                                    parseInt(data.to[0], 10),
+                                    parseInt(data.to[1], 10)
+                                );
+                            }
+                            break;
+
+                        case 'reset':
+                            game.reset();
+                            break;
+                    }
+                    renderer.render();
+                }
+            });
+
+        })();
+    </script>
+</body>
+</html>
