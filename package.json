@@ -1,7 +1,7 @@
 {
   "name": "node-red-contrib-chinese-chess",
   "version": "0.1.0",
-  "description": "Node-RED 动态中国象棋棋谱节点，支持开局教学与多分支剧本",
+  "description": "Node-RED Chinese Chess (Xiangqi) node - Interactive chess board with PGN support, tutorial mode and multi-branch script | Node-RED 中国象棋节点 - 动态棋谱、开局教学、多分支剧本",
   "main": "nodes/chinese-chess.js",
   "scripts": {
     "test": "echo \"Error: no test specified\" && exit 1"

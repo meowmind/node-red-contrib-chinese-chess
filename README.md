@@ -1,90 +1,219 @@
-# Node-RED 动态象棋谱库
+# Node-RED Chinese Chess (Xiangqi) | 中国象棋节点
 
-Node-RED 自定义节点，用于展示和交互中国象棋动态棋谱。
+---
 
-## 项目简介
+## 📖 English Documentation
 
-本项目是一个为 Node-RED 开发的自定义节点，支持在 Node-RED 中嵌入可交互的中国象棋棋盘，能够加载 PGN 格式棋谱，支持分步播放、用户交互走棋，适合制作象棋教学流程、棋谱演示等应用。
+### Overview
 
-## 功能特性
+A custom Node-RED node that provides an **interactive Chinese Chess (Xiangqi)** board with dynamic PGN support. Perfect for chess tutorials, opening analysis, and multi-branch scripted gameplay.
 
-- ✅ 加载标准 PGN 格式棋谱（支持中文记谱：炮二平五、马8进7）
-- ✅ 分步前进/后退播放棋谱（支持按钮点击和消息控制）
-- ✅ 支持用户点击交互走棋
-- ✅ 支持多分支剧本，适合互动开局教学
-- ✅ 适配 Node-RED Dashboard
-- ✅ 输出当前棋盘状态（FEN/PGN）
-- ✅ 原生 Canvas 绘制，不依赖外部前端库
+### Features
 
-## 项目结构
+- ✅ **Interactive Canvas Board** - Native HTML5 Canvas rendering, no external dependencies
+- ✅ **Standard PGN Format Support** - Load and replay chess games in PGN notation
+- ✅ **Step-by-step Replay** - Forward/backward navigation through moves
+- ✅ **User Interactive Play** - Click to move pieces with full rule validation
+- ✅ **Multi-branch Scripts** - Support for tutorial scripts with multiple response options
+- ✅ **Node-RED Dashboard Integration** - Seamless embedding in Dashboard flows
+- ✅ **FEN Output** - Export current board state as FEN string
+- ✅ **Chinese Notation Support** - Native support for traditional Chinese move notation
 
-```
-node-red-chinese-chess/
-├── nodes/                # Node-RED 节点源码
-│   ├── chinese-chess.html   # 节点配置界面
-│   └── chinese-chess.js     # 节点后端逻辑
-├── public/               # 前端静态资源
-│   ├── chinese-chess-core.js # 核心逻辑
-│   └── chinese-chess-ui.html # 棋盘UI模板
-├── icons/                # 节点图标
-├── plan/                 # 项目开发计划
-│   └── project-plan.md
-├── protocol/             # 技术协议文档
-│   └── technical-protocol.md
-├── docs/                 # 使用说明文档
-├── README.md             # 项目说明（本文件）
-└── package.json          # npm 包配置
-```
+### Installation
 
-## 安装
+#### Via Node-RED Palette Manager
 
-### 从 npm 安装（发布后）
+1. Open Node-RED
+2. Go to Menu → Manage Palette → Install
+3. Search for `node-red-contrib-chinese-chess`
+4. Click Install
+
+#### Manual Installation
 
 ```bash
 cd ~/.node-red
-npm install node-red-chinese-chess
+npm install node-red-contrib-chinese-chess
 ```
 
-### 开发安装
+Restart Node-RED after installation.
+
+### Usage
+
+#### 1. Basic Setup
+
+1. Drag the `chinese-chess` node from the palette to your flow
+2. Configure the node:
+   - **Group**: Dashboard group to place the board in
+   - **Size**: Width/Height of the widget
+   - **Board Size**: Pixel size of the chess board
+   - **Orientation**: Red at bottom / Black at bottom (default: Red)
+
+#### 2. Input Control
+
+Send messages to control the board:
+
+```javascript
+// Load PGN game
+{ payload: { action: "load", pgn: "1. 炮二平五 马8进7 2. 马二进三 车9平8" } }
+
+// Load FEN position
+{ payload: { action: "loadfen", fen: "3k5/4a4/4c4/9/9/9/9/4C4/4A4/3K5 w - - 0 1" } }
+
+// Navigation
+{ payload: { action: "next" } }      // Next move
+{ payload: { action: "prev" } }      // Previous move  
+{ payload: { action: "goto", step: 5 } }  // Jump to move #5
+{ payload: { action: "reset" } }     // Reset to starting position
+
+// Execute move (coordinate format)
+{ payload: { action: "move", from: [1, 7], to: [4, 7] } }
+```
+
+#### 3. Output Format
+
+The node outputs current state after each valid move:
+
+```javascript
+{
+    payload: {
+        fen: "3k5/4a4/4c4/9/9/9/9/4C4/4A4/3K5 w - - 0 1",
+        pgn: "1. 炮二平五",
+        pgnArray: ["炮二平五"],
+        currentStep: 1,
+        totalSteps: 1,
+        turn: "red",
+        history: [...]
+    }
+}
+```
+
+### Chess Piece Reference
+
+| Piece Type | Black (Top) | Red (Bottom) | English Name |
+|------------|-------------|--------------|--------------|
+| King       | 将          | 帅           | King / General |
+| Advisor    | 士          | 仕           | Advisor / Guard |
+| Elephant   | 象          | 相           | Elephant |
+| Horse      | 馬          | 马           | Horse / Knight |
+| Chariot    | 車          | 车           | Chariot / Rook |
+| Cannon     | 砲          | 炮           | Cannon |
+| Pawn       | 卒          | 兵           | Pawn / Soldier |
+
+### Board Coordinates
+
+- **X-axis (columns)**: 0-8 (left to right)
+- **Y-axis (rows)**: 0-9 (top to bottom, Black territory at top)
+
+---
+
+## 📖 中文文档
+
+### 简介
+
+Node-RED 自定义节点，提供**交互式中国象棋**棋盘，支持动态 PGN 棋谱加载。适用于象棋教学、开局分析和多分支剧本化对弈。
+
+### 功能特性
+
+- ✅ **Canvas 原生渲染** - 纯 HTML5 Canvas，无外部依赖
+- ✅ **标准 PGN 格式** - 支持加载和重播标准象棋 PGN 棋谱
+- ✅ **分步回放** - 前进/后退导航浏览每一步
+- ✅ **人机交互** - 点击走子，带完整规则验证
+- ✅ **多分支剧本** - 支持教程剧本，包含多种应答分支
+- ✅ **Dashboard 集成** - 无缝嵌入 Node-RED Dashboard
+- ✅ **FEN 导出** - 导出当前局面为标准 FEN 字符串
+- ✅ **中文记谱** - 原生支持传统中文记谱法
+
+### 安装
+
+#### 通过 Node-RED 面板安装
+
+1. 打开 Node-RED
+2. 菜单 → 节点管理 → 安装
+3. 搜索 `node-red-contrib-chinese-chess`
+4. 点击安装
+
+#### 手动安装
 
 ```bash
-cd ~/.node-red/node_modules
-git clone <repository-url>
-cd node-red-chinese-chess
-npm install
+cd ~/.node-red
+npm install node-red-contrib-chinese-chess
 ```
 
-重启 Node-RED 后，在节点面板中可以找到 `chinese-chess` 节点。
+安装完成后重启 Node-RED。
 
-## 使用方法
+### 使用方法
 
-1. 拖拽 `chinese-chess` 节点到流编辑器
-2. 配置棋盘大小和初始视角（红方/黑方）
-3. 输入消息控制节点：
-   - `{ "action": "load", "pgn": "1. 炮二平五 马8进7" }` - 加载棋谱
-   - `{ "action": "next" }` - 下一步
-   - `{ "action": "prev" }` - 上一步
-   - `{ "action": "goto", "step": 5 }` - 跳转到指定步数
-   - `{ "action": "move", "from": "a2", "to": "a3" }` - 走棋
-4. 节点输出当前棋盘状态，包含 FEN、PGN、当前步数等信息，可以接入后续处理
+#### 1. 基础配置
 
-详细使用说明和示例棋谱参见 [docs/examples.md](./docs/examples.md)。
+1. 从节点面板拖拽 `chinese-chess` 节点到工作区
+2. 配置节点参数：
+   - **组 (Group)**: 棋盘所在的 Dashboard 组
+   - **尺寸 (Size)**: 组件的宽高
+   - **棋盘大小 (Board Size)**: 棋盘像素尺寸
+   - **视角 (Orientation)**: 红方在下 / 黑方在下（默认：红方在下）
 
-## 技术栈
+#### 2. 输入控制
 
-- 后端：Node.js / Node-RED
-- 前端：原生 Canvas 绘制，不依赖外部库
-- 数据格式：PGN / FEN
-- 支持多分支剧本，适合互动教学
+通过消息控制棋盘行为：
 
-## 技术协议
+```javascript
+// 加载 PGN 棋谱
+{ payload: { action: "load", pgn: "1. 炮二平五 马8进7 2. 马二进三 车9平8" } }
 
-详见 [protocol/technical-protocol.md](./protocol/technical-protocol.md)
+// 加载 FEN 局面
+{ payload: { action: "loadfen", fen: "3k5/4a4/4c4/9/9/9/9/4C4/4A4/3K5 w - - 0 1" } }
 
-## 开发计划
+// 导航控制
+{ payload: { action: "next" } }      // 下一步
+{ payload: { action: "prev" } }      // 上一步  
+{ payload: { action: "goto", step: 5 } }  // 跳转到第5步
+{ payload: { action: "reset" } }     // 重置到初始局面
 
-详见 [plan/project-plan.md](./plan/project-plan.md)
+// 执行走子（坐标格式）
+{ payload: { action: "move", from: [1, 7], to: [4, 7] } }
+```
 
-## 许可证
+#### 3. 输出格式
+
+每步合法走子后，节点输出当前状态：
+
+```javascript
+{
+    payload: {
+        fen: "3k5/4a4/4c4/9/9/9/9/4C4/4A4/3K5 w - - 0 1",
+        pgn: "1. 炮二平五",
+        pgnArray: ["炮二平五"],
+        currentStep: 1,
+        totalSteps: 1,
+        turn: "red",
+        history: [...]
+    }
+}
+```
+
+### 棋子说明
+
+| 棋子类型 | 黑方（上方） | 红方（下方） | 英文名称 |
+|----------|-------------|-------------|----------|
+| 将/帅    | 将          | 帅          | King     |
+| 士/仕    | 士          | 仕          | Advisor  |
+| 象/相    | 象          | 相          | Elephant |
+| 马       | 馬          | 马          | Horse    |
+| 车       | 車          | 车          | Chariot  |
+| 炮       | 砲          | 炮          | Cannon   |
+| 卒/兵    | 卒          | 兵          | Pawn     |
+
+### 棋盘坐标
+
+- **X 轴（列）**: 0-8（从左到右）
+- **Y 轴（行）**: 0-9（从上到下，黑方在上方）
+
+---
+
+## License | 许可证
 
 MIT License
+
+---
+
+*Document translated to English-Chinese bilingual | 文档已翻译为中英双语*
