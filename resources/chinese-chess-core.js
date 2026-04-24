@@ -932,12 +932,12 @@ var ChineseChess = (function() {
                     fromX = parseInt(fromNumStr) - 1;
                 }
                 
-                if (fromX === null || !piecesByColumn.hasOwnProperty(fromX)) {
+                if (fromX === null || !piecesByColumn.hasOwnProperty(fromX.toString())) {
                     return null;
                 }
                 
                 // 在指定列中按方位选择棋子
-                var piecesInColumn = piecesByColumn[fromX];
+                var piecesInColumn = piecesByColumn[fromX.toString()];
                 piecesInColumn.sort(function(a, b) { return a.y - b.y; });
                 
                 if (positionPrefix === '前') {
@@ -966,7 +966,7 @@ var ChineseChess = (function() {
                 // 如果只有一列有多个棋子，那就是目标列
                 if (multiPieceColumns.length === 1) {
                     fromX = multiPieceColumns[0];
-                    var piecesInColumn = piecesByColumn[fromX];
+                    var piecesInColumn = piecesByColumn[fromX.toString()];
                     piecesInColumn.sort(function(a, b) { return a.y - b.y; });
                     
                     if (positionPrefix === '前') {
