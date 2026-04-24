@@ -820,15 +820,15 @@ var ChineseChess = (function() {
     var chineseNumReverse = {'一': 8, '二': 7, '三': 6, '四': 5, '五': 4, '六': 3, '七': 2, '八': 1, '九': 0};
 
     // 将中文记谱转换为坐标
-    // 格式：炮二平五、马8进7 等，支持中文数字和阿拉伯数字
+    // 格式1：炮二平五、马8进7 等（棋子+起点+动作+终点）
+    // 格式2：前车平七、后车退一 等（前/后+棋子+动作+终点 - 同列多棋子区分）
     function chineseMoveToCoordinate(moveText, game) {
         // 去除空格
         moveText = moveText.trim();
         if (moveText.length < 4) return null;
 
         var board = game.board;
-        var pieceChar = moveText[0];
-
+        
         // 所有棋子名称映射
         var pieceNamesAll = {
             '帅': PIECE.KING, '将': PIECE.KING,
@@ -839,64 +839,156 @@ var ChineseChess = (function() {
             '炮': PIECE.CANNON,
             '兵': PIECE.PAWN, '卒': PIECE.PAWN
         };
+        
+        // 方位词前缀（同列多棋子时使用）
+        var positionPrefixes = {'前': true, '后': true};
+        
+        var pieceChar, fromNumStr, action, toNumStr;
+        var usePositionPrefix = false;
+        var positionPrefix = null;
+        
+        // 检测是否使用方位词前缀：第一个字符是"前"或"后"，第二个字符是棋子名称
+        if (positionPrefixes.hasOwnProperty(moveText[0]) && pieceNamesAll.hasOwnProperty(moveText[1])) {
+            usePositionPrefix = true;
+            positionPrefix = moveText[0]; // "前" 或 "后"
+            pieceChar = moveText[1];
+            action = moveText[2];
+            toNumStr = moveText[3];
+        } else {
+            // 标准格式：棋子+起点+动作+终点
+            pieceChar = moveText[0];
+            fromNumStr = moveText[1];
+            action = moveText[2];
+            toNumStr = moveText[3];
+        }
+        
         var pieceType = pieceNamesAll[pieceChar];
         if (pieceType === undefined || pieceType === null) {
             return null;
         }
-
-        // 关键1：起点数字本身判断颜色！
-        // 中文数字（一~九）→ 红方，阿拉伯数字（1~9）→ 黑方
-        var fromNumStr = moveText[1];
-        var isRedMove = chineseNum.hasOwnProperty(fromNumStr);
-
-        // 关键2：检查轮次，不匹配直接返回 null
-        // 用 currentMoveIndex 而不是 history.length，因为回退后历史长度不变
-        var expectedIsRed = (game.currentMoveIndex % 2 === 0);
-        if (isRedMove !== expectedIsRed) {
-            console.log("[chinese-chess] 轮次错误，期望" + (expectedIsRed ? "红方" : "黑方") + "走棋");
-            return null;
-        }
-
-        // 解析：棋+起点+走法+终点
-        var action = moveText[2];
-        var toNumStr = moveText[3];
-
-        // 获取起点 x 坐标
-        var fromX = null;
-        if (isRedMove) {
-            // 红方：中文数字，从右数（一→8, 二→7, ..., 九→0）
-            fromX = 8 - chineseNum[fromNumStr];
-        } else if (!isNaN(parseInt(fromNumStr))) {
-            // 黑方：阿拉伯数字，从左数（1→0, 2→1, ..., 9→8）
-            var n = parseInt(fromNumStr) - 1;
-            fromX = n;
-        }
-
-        if (fromX === null) return null;
-
-        // 查找起点 y 坐标：在 fromX 列查找对应颜色和类型的棋子
-        var fromY = null;
-        var targetColor = isRedMove ? COLOR.RED : COLOR.BLACK;
         
-        // 先正序查找
-        for (var y = 0; y < 10; y++) {
-            var p = board.get(fromX, y);
-            if (p && p.type === pieceType && p.color === targetColor) {
-                fromY = y;
-                break;
+        // 关键：判断当前应该哪方走棋
+        var expectedIsRed = (game.currentMoveIndex % 2 === 0);
+        var targetColor = expectedIsRed ? COLOR.RED : COLOR.BLACK;
+        
+        // 方位词格式：需要先查找所有同类型棋子，再根据方位和列选择
+        var fromX = null;
+        var fromY = null;
+        
+        if (usePositionPrefix) {
+            // 方位词格式：前/后 + 棋子 + 动作 + 终点
+            // 需要遍历棋盘找到所有同类型同色棋子
+            var allPieces = [];
+            for (var x = 0; x < 9; x++) {
+                for (var y = 0; y < 10; y++) {
+                    var p = board.get(x, y);
+                    if (p && p.type === pieceType && p.color === targetColor) {
+                        allPieces.push({x: x, y: y});
+                    }
+                }
             }
-        }
-        if (fromY === null) {
-            // 逆序查找
-            for (var y = 9; y >= 0; y--) {
+            
+            if (allPieces.length === 0) return null;
+            
+            // 按列分组棋子
+            var piecesByColumn = {};
+            for (var i = 0; i < allPieces.length; i++) {
+                var px = allPieces[i].x;
+                if (!piecesByColumn[px]) {
+                    piecesByColumn[px] = [];
+                }
+                piecesByColumn[px].push(allPieces[i]);
+            }
+            
+            // 找出有多个棋子的列
+            var multiPieceColumns = [];
+            for (var col in piecesByColumn) {
+                if (piecesByColumn[col].length >= 2) {
+                    multiPieceColumns.push(parseInt(col));
+                }
+            }
+            
+            // 如果只有一列有多个棋子，那就是目标列
+            if (multiPieceColumns.length === 1) {
+                fromX = multiPieceColumns[0];
+                var piecesInColumn = piecesByColumn[fromX];
+                // 按 y 坐标排序（y 小的在棋盘上方，y 大的在下方）
+                piecesInColumn.sort(function(a, b) { return a.y - b.y; });
+                
+                if (positionPrefix === '前') {
+                    // "前"：对于红方在下，红方棋子 y 小的更靠上（更靠前）；黑方在上，黑方 y 大的更靠下（更靠前）
+                    // 简化：按棋子在棋盘上的相对位置，前方 = 更靠近对方的棋子
+                    if (expectedIsRed) {
+                        // 红方：y 小的更靠上 = 更靠前（更接近黑方阵地）
+                        fromY = piecesInColumn[0].y;
+                    } else {
+                        // 黑方：y 大的更靠下 = 更靠前（更接近红方阵地）
+                        fromY = piecesInColumn[piecesInColumn.length - 1].y;
+                    }
+                } else if (positionPrefix === '后') {
+                    // "后"：与"前"相反
+                    if (expectedIsRed) {
+                        // 红方：y 大的更靠下 = 更靠后
+                        fromY = piecesInColumn[piecesInColumn.length - 1].y;
+                    } else {
+                        // 黑方：y 小的更靠上 = 更靠后
+                        fromY = piecesInColumn[0].y;
+                    }
+                }
+            } else {
+                // 多列都有多个棋子的复杂情况，暂时返回 null
+                // TODO: 可以进一步支持如"前车二平七"等更复杂格式
+                return null;
+            }
+        } else {
+            // 标准格式：棋子+起点+动作+终点
+            // 关键：起点数字本身判断颜色！
+            // 中文数字（一~九）→ 红方，阿拉伯数字（1~9）→ 黑方
+            var isRedMoveByNum = chineseNum.hasOwnProperty(fromNumStr);
+            
+            // 检查轮次，不匹配直接返回 null
+            if (isRedMoveByNum !== expectedIsRed) {
+                console.log("[chinese-chess] 轮次错误，期望" + (expectedIsRed ? "红方" : "黑方") + "走棋");
+                return null;
+            }
+            
+            // 获取起点 x 坐标
+            if (isRedMoveByNum) {
+                // 红方：中文数字，从右数（一→8, 二→7, ..., 九→0）
+                fromX = 8 - chineseNum[fromNumStr];
+            } else if (!isNaN(parseInt(fromNumStr))) {
+                // 黑方：阿拉伯数字，从左数（1→0, 2→1, ..., 9→8）
+                var n = parseInt(fromNumStr) - 1;
+                fromX = n;
+            }
+            
+            if (fromX === null) return null;
+            
+            // 查找起点 y 坐标：在 fromX 列查找对应颜色和类型的棋子
+            // 先正序查找
+            for (var y = 0; y < 10; y++) {
                 var p = board.get(fromX, y);
                 if (p && p.type === pieceType && p.color === targetColor) {
                     fromY = y;
                     break;
                 }
             }
+            if (fromY === null) {
+                // 逆序查找
+                for (var y = 9; y >= 0; y--) {
+                    var p = board.get(fromX, y);
+                    if (p && p.type === pieceType && p.color === targetColor) {
+                        fromY = y;
+                        break;
+                    }
+                }
+            }
         }
+        
         if (fromY === null) return null;
+        
+        // 无论是哪种格式，都使用 expectedIsRed 计算终点坐标
+        var isRedMove = expectedIsRed;
 
         // 获取终点 x/y
         var toX = null;
