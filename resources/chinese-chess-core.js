@@ -826,6 +826,7 @@ var ChineseChess = (function() {
     function chineseMoveToCoordinate(moveText, game) {
         // 去除空格
         moveText = moveText.trim();
+        console.log("[chinese-chess debug] 开始解析走法: " + moveText + ", 长度: " + moveText.length);
         if (moveText.length < 4) return null;
 
         var board = game.board;
@@ -893,6 +894,11 @@ var ChineseChess = (function() {
         var fromY = null;
         
         if (usePositionPrefix) {
+            console.log("[chinese-chess debug] 方位词格式: prefix=" + positionPrefix + ", piece=" + pieceChar + ", hasExplicitColumn=" + hasExplicitColumn);
+            if (hasExplicitColumn) {
+                console.log("[chinese-chess debug] fromNumStr=" + fromNumStr + ", action=" + action + ", toNumStr=" + toNumStr);
+            }
+            
             // 方位词格式：需要遍历棋盘找到所有同类型同色棋子
             var allPieces = [];
             for (var x = 0; x < 9; x++) {
@@ -903,6 +909,8 @@ var ChineseChess = (function() {
                     }
                 }
             }
+            
+            console.log("[chinese-chess debug] 找到同类型棋子数量: " + allPieces.length);
             
             if (allPieces.length === 0) return null;
             
@@ -915,6 +923,8 @@ var ChineseChess = (function() {
                 }
                 piecesByColumn[px].push(allPieces[i]);
             }
+            
+            console.log("[chinese-chess debug] 按列分组结果: " + JSON.stringify(Object.keys(piecesByColumn)));
             
             if (hasExplicitColumn) {
                 // 格式3：有显式列号 - 前炮二平五、后车1平2
@@ -932,6 +942,9 @@ var ChineseChess = (function() {
                     fromX = parseInt(fromNumStr) - 1;
                 }
                 
+                console.log("[chinese-chess debug] 解析列号: fromNumStr=" + fromNumStr + ", isRedMoveByNum=" + isRedMoveByNum + ", fromX=" + fromX);
+                console.log("[chinese-chess debug] piecesByColumn keys: " + Object.keys(piecesByColumn) + ", hasOwnProperty(fromX.toString()): " + piecesByColumn.hasOwnProperty(fromX.toString()));
+                
                 if (fromX === null || !piecesByColumn.hasOwnProperty(fromX.toString())) {
                     return null;
                 }
@@ -939,6 +952,8 @@ var ChineseChess = (function() {
                 // 在指定列中按方位选择棋子
                 var piecesInColumn = piecesByColumn[fromX.toString()];
                 piecesInColumn.sort(function(a, b) { return a.y - b.y; });
+                
+                console.log("[chinese-chess debug] 列 " + fromX + " 中的棋子 (y坐标排序): " + JSON.stringify(piecesInColumn));
                 
                 if (positionPrefix === '前') {
                     if (expectedIsRed) {
@@ -1094,13 +1109,17 @@ var ChineseChess = (function() {
 
         // 边界检查
         if (toX < 0 || toX >= 9 || toY < 0 || toY >= 10) return null;
-
-        return {
+        
+        var result = {
             fromX: fromX,
             fromY: fromY,
             toX: toX,
             toY: toY
         };
+        
+        console.log("[chinese-chess debug] 最终解析结果: " + JSON.stringify(result));
+        
+        return result;
     }
 
 
