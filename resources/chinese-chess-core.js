@@ -1788,7 +1788,7 @@ var ChineseChess = (function() {
     };
 
     // 将坐标转换为中文记谱
-    function coordinateToChineseMove(move, isRed) {
+    function coordinateToChineseMove(move, isRed, game) {
         var pieceNames = {0: ['将', '帅'], 1: ['士', '仕'], 2: ['象', '相'], 3: ['马', '马'], 4: ['车', '车'], 5: ['炮', '炮'], 6: ['卒', '兵']};
         var chineseNums = ['一', '二', '三', '四', '五', '六', '七', '八', '九'];
         
@@ -1806,8 +1806,73 @@ var ChineseChess = (function() {
         // 棋子名称
         var pieceChar = pieceNames[piece.type][isRed ? 1 : 0];
         
+        // 检查同列是否有多个同类型同色棋子（需要加"前"或"后"）
+        var positionPrefix = '';
+        var useExplicitColumn = false;
+        
+        if (game && game.board) {
+            var targetColor = isRed ? 0 : 1;
+            var allSameTypePieces = [];
+            
+            // 遍历棋盘，找到所有同类型同色的棋子
+            for (var x = 0; x < 9; x++) {
+                for (var y = 0; y < 10; y++) {
+                    var p = game.board.get(x, y);
+                    if (p && p.type === piece.type && p.color === targetColor) {
+                        allSameTypePieces.push({x: x, y: y});
+                    }
+                }
+            }
+            
+            // 按列分组
+            var piecesByColumn = {};
+            for (var i = 0; i < allSameTypePieces.length; i++) {
+                var px = allSameTypePieces[i].x;
+                if (!piecesByColumn[px]) {
+                    piecesByColumn[px] = [];
+                }
+                piecesByColumn[px].push(allSameTypePieces[i]);
+            }
+            
+            // 统计有多少列包含多个同类型棋子
+            var multiPieceColumns = [];
+            for (var col in piecesByColumn) {
+                if (piecesByColumn[col].length >= 2) {
+                    multiPieceColumns.push(parseInt(col));
+                }
+            }
+            
+            // 如果当前棋子所在列有多个同类型棋子
+            if (piecesByColumn.hasOwnProperty(move.fromX.toString()) && piecesByColumn[move.fromX.toString()].length >= 2) {
+                var piecesInColumn = piecesByColumn[move.fromX];
+                piecesInColumn.sort(function(a, b) { return a.y - b.y; });
+                
+                // 判断是"前"还是"后"
+                // 红方在下：y小的更靠上 = 更靠前，y大的更靠下 = 更靠后
+                // 黑方在上：y大的更靠下 = 更靠前（靠近红方），y小的更靠上 = 更靠后
+                var isFrontPiece = false;
+                if (isRed) {
+                    isFrontPiece = (move.fromY === piecesInColumn[0].y); // 红方y小的是前
+                } else {
+                    isFrontPiece = (move.fromY === piecesInColumn[piecesInColumn.length - 1].y); // 黑方y大的是前
+                }
+                
+                positionPrefix = isFrontPiece ? '前' : '后';
+                
+                // 如果有多列都有多个同类型棋子，需要显式保留列号（5字符格式）
+                if (multiPieceColumns.length >= 2) {
+                    useExplicitColumn = true;
+                }
+            }
+        }
+        
         // 起点列号：红方从右数（中文数字），黑方从左数（阿拉伯数字）
-        var fromCol = isRed ? chineseNums[8 - move.fromX] : (move.fromX + 1).toString();
+        // 注意：单列多棋子且只有一列时，4字符格式不需要列号（用"前"/"后"代替）
+        //       但多列多棋子时，5字符格式需要保留列号
+        var fromCol = '';
+        if (!positionPrefix || useExplicitColumn) {
+            fromCol = isRed ? chineseNums[8 - move.fromX] : (move.fromX + 1).toString();
+        }
         
         // 计算动作：平、进、退
         var action = '';
@@ -1853,7 +1918,7 @@ var ChineseChess = (function() {
             }
         }
         
-        return pieceChar + fromCol + action + toColOrStep;
+        return positionPrefix + pieceChar + fromCol + action + toColOrStep;
     }
 
     // 获取当前 PGN（中文记谱格式）
@@ -1877,7 +1942,7 @@ var ChineseChess = (function() {
         var moves = [];
         for (var i = 0; i < this.history.length; i++) {
             var isRed = i % 2 === 0;
-            var chineseMove = coordinateToChineseMove(this.history[i], isRed);
+            var chineseMove = coordinateToChineseMove(this.history[i], isRed, this);
             moves.push(chineseMove || this.history[i].moveStr);
         }
         
