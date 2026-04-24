@@ -820,8 +820,9 @@ var ChineseChess = (function() {
     var chineseNumReverse = {'一': 8, '二': 7, '三': 6, '四': 5, '五': 4, '六': 3, '七': 2, '八': 1, '九': 0};
 
     // 将中文记谱转换为坐标
-    // 格式1：炮二平五、马8进7 等（棋子+起点+动作+终点）
-    // 格式2：前车平七、后车退一 等（前/后+棋子+动作+终点 - 同列多棋子区分）
+    // 格式1：炮二平五、马8进7 等（棋子+起点+动作+终点）- 4字符
+    // 格式2：前车平七、后车退一 等（前/后+棋子+动作+终点）- 4字符，单列多棋子
+    // 格式3：前炮二平五、后车1平2 等（前/后+棋子+起点+动作+终点）- 5字符，多列多棋子
     function chineseMoveToCoordinate(moveText, game) {
         // 去除空格
         moveText = moveText.trim();
@@ -846,16 +847,32 @@ var ChineseChess = (function() {
         var pieceChar, fromNumStr, action, toNumStr;
         var usePositionPrefix = false;
         var positionPrefix = null;
+        var hasExplicitColumn = false; // 是否有显式列号（5字符格式）
         
-        // 检测是否使用方位词前缀：第一个字符是"前"或"后"，第二个字符是棋子名称
+        // 检测格式类型
         if (positionPrefixes.hasOwnProperty(moveText[0]) && pieceNamesAll.hasOwnProperty(moveText[1])) {
+            // 方位词开头：可能是4字符或5字符格式
             usePositionPrefix = true;
             positionPrefix = moveText[0]; // "前" 或 "后"
             pieceChar = moveText[1];
-            action = moveText[2];
-            toNumStr = moveText[3];
+            
+            if (moveText.length >= 5) {
+                // 格式3：5字符 - 前/后 + 棋子 + 起点 + 动作 + 终点
+                // 如：前炮二平五、后车1平2
+                fromNumStr = moveText[2];
+                action = moveText[3];
+                toNumStr = moveText[4];
+                hasExplicitColumn = true;
+            } else {
+                // 格式2：4字符 - 前/后 + 棋子 + 动作 + 终点
+                // 如：前车平七、后车退一
+                action = moveText[2];
+                toNumStr = moveText[3];
+                hasExplicitColumn = false;
+            }
         } else {
-            // 标准格式：棋子+起点+动作+终点
+            // 格式1：标准4字符 - 棋子+起点+动作+终点
+            // 如：炮二平五、马8进7
             pieceChar = moveText[0];
             fromNumStr = moveText[1];
             action = moveText[2];
@@ -876,8 +893,7 @@ var ChineseChess = (function() {
         var fromY = null;
         
         if (usePositionPrefix) {
-            // 方位词格式：前/后 + 棋子 + 动作 + 终点
-            // 需要遍历棋盘找到所有同类型同色棋子
+            // 方位词格式：需要遍历棋盘找到所有同类型同色棋子
             var allPieces = [];
             for (var x = 0; x < 9; x++) {
                 for (var y = 0; y < 10; y++) {
@@ -900,45 +916,77 @@ var ChineseChess = (function() {
                 piecesByColumn[px].push(allPieces[i]);
             }
             
-            // 找出有多个棋子的列
-            var multiPieceColumns = [];
-            for (var col in piecesByColumn) {
-                if (piecesByColumn[col].length >= 2) {
-                    multiPieceColumns.push(parseInt(col));
+            if (hasExplicitColumn) {
+                // 格式3：有显式列号 - 前炮二平五、后车1平2
+                // 直接使用 fromNumStr 计算列号
+                var isRedMoveByNum = chineseNum.hasOwnProperty(fromNumStr);
+                if (isRedMoveByNum !== expectedIsRed) {
+                    console.log("[chinese-chess] 轮次错误，期望" + (expectedIsRed ? "红方" : "黑方") + "走棋");
+                    return null;
                 }
-            }
-            
-            // 如果只有一列有多个棋子，那就是目标列
-            if (multiPieceColumns.length === 1) {
-                fromX = multiPieceColumns[0];
+                
+                // 解析起点列号
+                if (isRedMoveByNum) {
+                    fromX = 8 - chineseNum[fromNumStr];
+                } else if (!isNaN(parseInt(fromNumStr))) {
+                    fromX = parseInt(fromNumStr) - 1;
+                }
+                
+                if (fromX === null || !piecesByColumn.hasOwnProperty(fromX)) {
+                    return null;
+                }
+                
+                // 在指定列中按方位选择棋子
                 var piecesInColumn = piecesByColumn[fromX];
-                // 按 y 坐标排序（y 小的在棋盘上方，y 大的在下方）
                 piecesInColumn.sort(function(a, b) { return a.y - b.y; });
                 
                 if (positionPrefix === '前') {
-                    // "前"：对于红方在下，红方棋子 y 小的更靠上（更靠前）；黑方在上，黑方 y 大的更靠下（更靠前）
-                    // 简化：按棋子在棋盘上的相对位置，前方 = 更靠近对方的棋子
                     if (expectedIsRed) {
-                        // 红方：y 小的更靠上 = 更靠前（更接近黑方阵地）
                         fromY = piecesInColumn[0].y;
                     } else {
-                        // 黑方：y 大的更靠下 = 更靠前（更接近红方阵地）
                         fromY = piecesInColumn[piecesInColumn.length - 1].y;
                     }
                 } else if (positionPrefix === '后') {
-                    // "后"：与"前"相反
                     if (expectedIsRed) {
-                        // 红方：y 大的更靠下 = 更靠后
                         fromY = piecesInColumn[piecesInColumn.length - 1].y;
                     } else {
-                        // 黑方：y 小的更靠上 = 更靠后
                         fromY = piecesInColumn[0].y;
                     }
                 }
             } else {
-                // 多列都有多个棋子的复杂情况，暂时返回 null
-                // TODO: 可以进一步支持如"前车二平七"等更复杂格式
-                return null;
+                // 格式2：无显式列号 - 前车平七、后车退一
+                // 找出有多个棋子的列
+                var multiPieceColumns = [];
+                for (var col in piecesByColumn) {
+                    if (piecesByColumn[col].length >= 2) {
+                        multiPieceColumns.push(parseInt(col));
+                    }
+                }
+                
+                // 如果只有一列有多个棋子，那就是目标列
+                if (multiPieceColumns.length === 1) {
+                    fromX = multiPieceColumns[0];
+                    var piecesInColumn = piecesByColumn[fromX];
+                    piecesInColumn.sort(function(a, b) { return a.y - b.y; });
+                    
+                    if (positionPrefix === '前') {
+                        if (expectedIsRed) {
+                            fromY = piecesInColumn[0].y;
+                        } else {
+                            fromY = piecesInColumn[piecesInColumn.length - 1].y;
+                        }
+                    } else if (positionPrefix === '后') {
+                        if (expectedIsRed) {
+                            fromY = piecesInColumn[piecesInColumn.length - 1].y;
+                        } else {
+                            fromY = piecesInColumn[0].y;
+                        }
+                    }
+                } else {
+                    // 多列都有多个棋子，必须使用带列号的格式（如前炮二平五）
+                    console.log("[chinese-chess] 多列存在同类型棋子，请使用带列号格式：如前炮二平五");
+                    return null;
+                }
             }
         } else {
             // 标准格式：棋子+起点+动作+终点
