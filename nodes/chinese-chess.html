@@ -81,3 +81,135 @@
         // 核心脚本已经在控件初始化时动态加载，这里不需要额外操作
     })();
 </script>
+
+<script type="text/html" data-help-name="chinese-chess">
+    <h3>Chinese Chess | 中国象棋</h3>
+    <p>A Node-RED dashboard widget for playing and analyzing Chinese Chess (Xiangqi).</p>
+    
+    <h3>Example Flow</h3>
+    <pre>
+[
+  {
+    "id": "f5dc560aa0b5de39",
+    "type": "inject",
+    "z": "48927d4faec10c56",
+    "name": "",
+    "props": [
+      {"p": "payload"},
+      {"p": "topic", "vt": "str"}
+    ],
+    "repeat": "",
+    "crontab": "",
+    "once": false,
+    "onceDelay": 0.1,
+    "topic": "",
+    "payload": "",
+    "payloadType": "date",
+    "x": 150,
+    "y": 400,
+    "wires": [["087d89e099f921d1"]]
+  },
+  {
+    "id": "087d89e099f921d1",
+    "type": "function",
+    "z": "48927d4faec10c56",
+    "name": "load FEN",
+    "func": "msg.payload = \"r1bakab1r/9/1cn1n1c1/p1p1p1p1p/9/9/P1P1P1P1P/1CN1N1C1/9/R1BAKAB1R b - - 0 8\";\nreturn msg;",
+    "outputs": 1,
+    "timeout": 0,
+    "noerr": 0,
+    "initialize": "",
+    "finalize": "",
+    "libs": [],
+    "x": 360,
+    "y": 400,
+    "wires": [["e5797ee2c9602acc"]]
+  },
+  {
+    "id": "fe09559e969116d1",
+    "type": "debug",
+    "z": "48927d4faec10c56",
+    "name": "debug 1",
+    "active": true,
+    "tosidebar": true,
+    "console": true,
+    "tostatus": true,
+    "complete": "true",
+    "targetType": "full",
+    "statusVal": "payload",
+    "statusType": "auto",
+    "x": 790,
+    "y": 480,
+    "wires": []
+  },
+  {
+    "id": "e5797ee2c9602acc",
+    "type": "chinese-chess",
+    "z": "48927d4faec10c56",
+    "name": "动态象棋谱",
+    "group": "7a804ca14b39480c",
+    "order": 0,
+    "width": "15",
+    "height": "15",
+    "chessWidth": "500",
+    "chessHeight": "500",
+    "orientation": "red",
+    "showControls": true,
+    "x": 630,
+    "y": 480,
+    "wires": [["fe09559e969116d1"]]
+  },
+  {
+    "id": "1527ce256e1744bb",
+    "type": "inject",
+    "z": "48927d4faec10c56",
+    "name": "Get PGN",
+    "props": [{"p": "payload"}],
+    "repeat": "",
+    "crontab": "",
+    "once": false,
+    "onceDelay": 0.1,
+    "topic": "",
+    "payload": "{\"action\":\"getPGN\"}",
+    "payloadType": "json",
+    "x": 380,
+    "y": 520,
+    "wires": [["e5797ee2c9602acc"]]
+  },
+  {
+    "id": "3b61694a8c9a367f",
+    "type": "function",
+    "z": "48927d4faec10c56",
+    "name": "load PGN",
+    "func": "msg.payload = {\"action\": \"load\", \"pgn\": \"1. 炮二平五 马8进7 2. 马二进三 车9平8\"};\nreturn msg;",
+    "outputs": 1,
+    "timeout": 0,
+    "noerr": 0,
+    "initialize": "",
+    "finalize": "",
+    "libs": [],
+    "x": 380,
+    "y": 480,
+    "wires": [["e5797ee2c9602acc"]]
+  },
+  {
+    "id": "7a804ca14b39480c",
+    "type": "ui_group",
+    "name": "Group 1",
+    "tab": "093a5e428521524a",
+    "order": 1,
+    "disp": false,
+    "width": "21",
+    "collapse": false,
+    "className": ""
+  },
+  {
+    "id": "093a5e428521524a",
+    "type": "ui_tab",
+    "name": "Tab 1",
+    "icon": "dashboard",
+    "order": 1
+  }
+]
+    </pre>
+</script>
