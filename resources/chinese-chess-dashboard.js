@@ -71,7 +71,7 @@
                                             }
                                             updateInfo(branch.note);
                                         } else {
-                                            updateInfo('未匹配剧本走法: ' + moveStr);
+                                            updateInfo('Branch not matched: ' + moveStr);
                                         }
                                     }
                                     renderer.render();
@@ -97,11 +97,21 @@
                                 case 'load':
                                     if (data.pgn) {
                                         var result = game.loadPGN(data.pgn);
-                                        updateInfo('已加载 PGN，共 ' + result.total + ' 步，成功解析 ' + result.success + ' 步');
+                                        if (result.success) {
+                                            updateInfo('PGN loaded: ' + result.loaded + '/' + result.total + ' moves valid');
+                                            if (renderer) renderer.render();
+                                        } else {
+                                            var errorMsg = '❌ PGN validation failed: ' + result.errors.length + ' errors';
+                                            if (result.errors.length > 0) {
+                                                errorMsg += '<br>&bull; ' + result.errors.slice(0, 3).join('<br>&bull; ');
+                                                if (result.errors.length > 3) errorMsg += '<br>&bull; ...and ' + (result.errors.length - 3) + ' more errors';
+                                            }
+                                            updateInfo(errorMsg);
+                                        }
                                     } else if (data.script) {
                                         game.script = data.script;
                                         game.reset();
-                                        updateInfo('已加载剧本');
+                                        updateInfo('Script loaded');
                                     }
                                     break;
 
@@ -146,9 +156,9 @@
 
                         function updateInfo(text) {
                             if (text && infoPanel) {
-                                infoPanel.innerHTML = '<strong>提示:</strong> ' + text;
+                                infoPanel.innerHTML = '<strong>Info:</strong> ' + text;
                             } else if (infoPanel && game) {
-                                infoPanel.innerHTML = '<strong>步数:</strong> ' + game.history.length + ', <strong>轮到:</strong> ' + (game.history.length % 2 === 0 ? '红方' : '黑方');
+                                infoPanel.innerHTML = '<strong>Step:</strong> ' + game.history.length + ', <strong>Turn:</strong> ' + (game.history.length % 2 === 0 ? 'Red' : 'Black');
                             }
                         }
 

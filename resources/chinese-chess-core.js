@@ -289,6 +289,7 @@ var ChineseChess = (function() {
     // }
 
     function Game(options) {
+        options = options || {};
         this.board = new Board();
         this.history = [];
         this.currentNode = null;
@@ -296,6 +297,8 @@ var ChineseChess = (function() {
         this.script = options.script || null;
         this.onEvent = options.onEvent || function() {};
         this.recording = true; // 默认正在记录
+        this.pgnMoves = null;   // PGN 棋谱着法缓存
+        this.pgnCurrentStep = 0; // PGN 当前走到第几步
     }
 
     Game.prototype.reset = function() {
@@ -306,6 +309,8 @@ var ChineseChess = (function() {
         if (this.script && this.script.root) {
             this.currentNode = this.script.root;
         }
+        // 注意：reset 不清除 pgnMoves，用户可以重新播放
+        this.pgnCurrentStep = 0;
         this.triggerEvent('reset', null);
     };
 
@@ -630,6 +635,42 @@ var ChineseChess = (function() {
         }
         // 走子前先获取棋子信息（用于 PGN 记谱）
         var piece = this.board.get(fromX, fromY);
+        
+        // 走子前先判断：同列是否有多个同类型同色棋子（用于前/后前缀）
+        var positionPrefix = '';
+        if (piece) {
+            var allSameType = [];
+            for (var cx = 0; cx < 9; cx++) {
+                for (var cy = 0; cy < 10; cy++) {
+                    var p = this.board.get(cx, cy);
+                    if (p && p.type === piece.type && p.color === piece.color) {
+                        allSameType.push({x: cx, y: cy});
+                    }
+                }
+            }
+            // 按列分组
+            var colGroup = {};
+            for (var ci = 0; ci < allSameType.length; ci++) {
+                var px = allSameType[ci].x;
+                if (!colGroup[px]) { colGroup[px] = []; }
+                colGroup[px].push(allSameType[ci]);
+            }
+            // 如果起点列有多个同类型棋子，判断是前还是后
+            var fromColKey = fromX.toString();
+            if (colGroup[fromColKey] && colGroup[fromColKey].length >= 2) {
+                var piecesInCol = colGroup[fromColKey];
+                piecesInCol.sort(function(a, b) { return a.y - b.y; });
+                var isFront = false;
+                var isRed = piece.color === 0;
+                if (isRed) { // 红方在下，y小的更靠上=前
+                    isFront = (fromY === piecesInCol[0].y);
+                } else { // 黑方在上，y大的更靠下=更靠近红方=前
+                    isFront = (fromY === piecesInCol[piecesInCol.length - 1].y);
+                }
+                positionPrefix = isFront ? '前' : '后';
+            }
+        }
+        
         var result = this.board.move(fromX, fromY, toX, toY);
         if (!result) {
             console.log('node-red-chinese-chess: game.move: invalid move', fromX, fromY, toX, toY);
@@ -644,7 +685,8 @@ var ChineseChess = (function() {
             moveStr: moveStr,
             piece: piece,  // 保存棋子信息用于记谱
             pieceType: piece ? piece.type : null,
-            pieceColor: piece ? piece.color : null
+            pieceColor: piece ? piece.color : null,
+            positionPrefix: positionPrefix  // 走子前就判断好的前/后前缀
         };
 
         // 分支处理逻辑
@@ -686,17 +728,23 @@ var ChineseChess = (function() {
         // 已经到最开始了，不能再回退
         if (this.currentMoveIndex <= 0) return false;
         this.currentMoveIndex--;
+        // PGN 模式：同步更新 pgnCurrentStep
+        if (this.pgnMoves && this.pgnMoves.length > 0) {
+            this.pgnCurrentStep = this.currentMoveIndex;
+        }
         var targetIndex = this.currentMoveIndex;
         // 保存完整历史，重新创建空棋盘，然后重放
         var savedHistory = this.history;
         var savedScript = this.script;
         var savedCurrentNode = this.currentNode;
         var savedPgnMoves = this.pgnMoves;
+        var savedPgnCurrentStep = this.pgnCurrentStep;
         this.board = new Board();
         this.history = savedHistory;
         this.script = savedScript;
         this.currentNode = savedCurrentNode;
         this.pgnMoves = savedPgnMoves;
+        this.pgnCurrentStep = savedPgnCurrentStep;
         for (var i = 0; i < this.currentMoveIndex; i++) {
             var m = this.history[i];
             // 回退/前进不验证规则，直接重放历史走法
@@ -720,16 +768,7 @@ var ChineseChess = (function() {
                 return true;
             }
         }
-        // 如果是 PGN 加载模式，走下一步
-        if (this.pgnMoves && this.currentMoveIndex < this.pgnMoves.length) {
-            var moveText = this.pgnMoves[this.currentMoveIndex];
-            var coord = ChineseChess.chineseMoveToCoordinate(moveText, this);
-            if (coord) {
-                this.move(coord.fromX, coord.fromY, coord.toX, coord.toY);
-                return true;
-            }
-        }
-        // 普通历史前进（回退后继续前进）
+        // 回退后的前进：先重放已有的历史
         if (this.currentMoveIndex < this.history.length) {
             this.currentMoveIndex++;
             var targetIndex = this.currentMoveIndex;
@@ -738,11 +777,13 @@ var ChineseChess = (function() {
             var savedScript = this.script;
             var savedCurrentNode = this.currentNode;
             var savedPgnMoves = this.pgnMoves;
+            var savedPgnCurrentStep = this.pgnCurrentStep;
             this.board = new Board();
             this.history = savedHistory;
             this.script = savedScript;
             this.currentNode = savedCurrentNode;
             this.pgnMoves = savedPgnMoves;
+            this.pgnCurrentStep = savedPgnCurrentStep;
             for (var i = 0; i < this.currentMoveIndex; i++) {
                 var m = this.history[i];
                 this.board.move(m.fromX, m.fromY, m.toX, m.toY);
@@ -750,6 +791,16 @@ var ChineseChess = (function() {
             this.triggerEvent('next', {index: this.currentMoveIndex});
             this.triggerEvent('move', {index: this.currentMoveIndex});
             return true;
+        }
+        // PGN 模式：从缓存的着法数组中执行新的下一步
+        if (this.pgnMoves && this.pgnMoves.length > 0 && this.pgnCurrentStep < this.pgnMoves.length) {
+            var moveText = this.pgnMoves[this.pgnCurrentStep];
+            var coord = ChineseChess.chineseMoveToCoordinate(moveText, this);
+            if (coord) {
+                this.move(coord.fromX, coord.fromY, coord.toX, coord.toY);
+                this.pgnCurrentStep++;
+                return true;
+            }
         }
         return false;
     };
@@ -784,34 +835,179 @@ var ChineseChess = (function() {
     }
 
     // PGN 解析，支持中文记谱
-    function parsePGN(pgn) {
-        var moves = [];
-        // 简单分词，提取着法
-        var tokens = pgn.split(/\s+/);
-        var moveRegex = /^\d+\.(.*)$/;
-        tokens.forEach(function(t) {
-            var match = t.match(moveRegex);
-            if (match) {
-                var m = match[1];
-                if (m) moves.push(m);
-            } else if (t && !t.includes('[') && !t.includes(']') && !t.startsWith('[')) {
-                moves.push(t);
-            }
-        });
-        return moves;
-    }
-
-    // 加载完整 PGN 并走完所有步骤
-    Game.prototype.loadPGN = function(pgn) {
-        var moves = parsePGN(pgn);
-        this.pgnMoves = moves;
-        var successCount = 0;
-        this.reset();
-        // 默认加载后不全部走完，留给分步播放
-        return {
-            total: moves.length,
-            success: successCount
+// 中国象棋标准 PGN 解析算法
+    function parsePGN(pgnText) {
+        var result = {
+            tags: {},
+            moves: [],
+            errors: [],
+            warnings: [],
+            valid: true
         };
+        
+        if (!pgnText || typeof pgnText !== 'string') {
+            result.errors.push('PGN is empty or not a string');
+            result.valid = false;
+            return result;
+        }
+        
+        // 1. 清洗文本，按行拆分
+        var lines = pgnText.split('\n').map(function(l) { return l.trim(); }).filter(function(l) { return l; });
+        var tagRegex = /^\[(\w+)\s+"(.*?)"\]$/;
+        var moveLineStart = 0;
+        
+        // 2. 解析标签 [key "value"]
+        for (var i = 0; i < lines.length; i++) {
+            var line = lines[i];
+            var match = line.match(tagRegex);
+            if (match) {
+                result.tags[match[1]] = match[2];
+            } else {
+                moveLineStart = i;
+                break;
+            }
+        }
+        
+        // 3. 提取并清洗棋步
+        var moveText = lines.slice(moveLineStart).join(' ');
+        moveText = moveText.replace(/\{.*?\}/g, ''); // 去掉注释
+        moveText = moveText.replace(/\d+\.|\.\.\./g, ''); // 去掉步数标记 1. 2. ...
+        
+        // 4. 拆分成纯着法数组
+        var rawMoves = moveText.trim().split(/\s+/).filter(function(m) { return m; });
+        
+        // 5. 验证每个着法格式
+        var validPieceChars = {'帅':true,'将':true,'仕':true,'士':true,'相':true,'象':true,'马':true,'车':true,'炮':true,'兵':true,'卒':true,'前':true,'后':true};
+        var validActions = {'平':true,'进':true,'退':true};
+        
+        for (var idx = 0; idx < rawMoves.length; idx++) {
+            var moveStr = rawMoves[idx];
+            var moveValid = true;
+            var errorMsg = '';
+            
+            // 长度检查（4-5字符）
+            if (moveStr.length < 4) {
+                moveValid = false;
+                errorMsg = 'Move too short (min 4 chars)';
+            } else if (moveStr.length > 5) {
+                moveValid = false;
+                errorMsg = 'Move too long (max 5 chars)';
+            }
+            
+            // 首字符检查
+            if (moveValid && !validPieceChars.hasOwnProperty(moveStr[0])) {
+                moveValid = false;
+                errorMsg = 'Invalid piece character: ' + moveStr[0];
+            }
+            
+            // 动作字符检查
+            if (moveValid && moveStr.length >= 3) {
+                var actionPos = moveStr.length === 4 ? 2 : 3;
+                if (!validActions.hasOwnProperty(moveStr[actionPos])) {
+                    moveValid = false;
+                    errorMsg = 'Invalid action character: ' + moveStr[actionPos] + ' (must be 平, 进, 退)';
+                }
+            }
+            
+            if (moveValid) {
+                result.moves.push(moveStr);
+            } else {
+                result.errors.push('Move #' + (idx + 1) + ': "' + moveStr + '" - ' + errorMsg);
+                result.valid = false;
+            }
+        }
+        
+        if (result.moves.length === 0 && result.errors.length === 0) {
+            result.errors.push('No valid moves found in PGN');
+            result.valid = false;
+        }
+        
+        return result;
+    }
+    Game.prototype.loadPGN = function(pgn) {
+        var parseResult = parsePGN(pgn);
+        
+        // 如果解析有错误，直接返回
+        if (!parseResult.valid) {
+            return {
+                success: false,
+                total: 0,
+                loaded: 0,
+                errors: parseResult.errors,
+                warnings: parseResult.warnings
+            };
+        }
+        
+        // 先验证所有着法合法性
+        var tempGame = new Game();
+        var loadErrors = [];
+        
+        for (var i = 0; i < parseResult.moves.length; i++) {
+            var moveText = parseResult.moves[i];
+            var coord = ChineseChess.chineseMoveToCoordinate(moveText, tempGame);
+            
+            if (!coord) {
+                loadErrors.push('Move #' + (i + 1) + ': "' + moveText + '" - Cannot parse coordinates');
+                continue;
+            }
+            
+            var piece = tempGame.board.get(coord.fromX, coord.fromY);
+            if (!piece) {
+                loadErrors.push('Move #' + (i + 1) + ': "' + moveText + '" - No piece at start position');
+                continue;
+            }
+            
+            if (!tempGame.board.isValidMove(coord.fromX, coord.fromY, coord.toX, coord.toY)) {
+                loadErrors.push('Move #' + (i + 1) + ': "' + moveText + '" - Invalid move according to rules');
+                continue;
+            }
+            
+            // 执行走法验证
+            tempGame.move(coord.fromX, coord.fromY, coord.toX, coord.toY);
+        }
+        
+        // 如果有验证错误，不加载
+        if (loadErrors.length > 0) {
+            return {
+                success: false,
+                total: parseResult.moves.length,
+                loaded: 0,
+                errors: loadErrors,
+                warnings: parseResult.warnings
+            };
+        }
+        
+        // 验证通过，加载棋谱
+        this.pgnMoves = parseResult.moves;  // 缓存所有着法步骤
+        this.pgnCurrentStep = 0;             // 当前走到第几步（0 = 初始位置）
+        this.reset();                        // 保持在初始位置，不自动走棋
+        
+        return {
+            success: true,
+            total: this.pgnMoves.length,
+            loaded: 0,
+            currentStep: 0,
+            errors: [],
+            warnings: parseResult.warnings
+        };
+    };
+    
+    // 克隆游戏状态
+    Game.prototype.clone = function() {
+        var cloned = createGame();
+        cloned.board = new Board();
+        // 克隆棋盘状态
+        for (var x = 0; x < 9; x++) {
+            for (var y = 0; y < 10; y++) {
+                var piece = this.board.get(x, y);
+                if (piece) {
+                    cloned.board.place(x, y, piece.type, piece.color);
+                }
+            }
+        }
+        cloned.history = JSON.parse(JSON.stringify(this.history));
+        cloned.currentMoveIndex = this.currentMoveIndex;
+        return cloned;
     };
 
 
@@ -1075,9 +1271,31 @@ var ChineseChess = (function() {
                     } else {
                         toX = parseInt(toNumStr) - 1; // 黑方阿拉伯数字，从左数
                     }
-                    // toY 需要根据棋子走法规则计算
-                    // 简单处理：调用 isValidMove 遍历查找
-                    // 这里暂时用近似：马走日，象走田等
+                    // 根据棋子类型计算终点 Y 坐标
+                    var dx = Math.abs(toX - fromX);
+                    if (pieceType === PIECE.HORSE) {
+                        // 马走日：dx=1 则 dy=2，dx=2 则 dy=1
+                        var dy = (dx === 1) ? 2 : 1;
+                        if (action === '进') {
+                            toY = isRedMove ? (fromY - dy) : (fromY + dy);
+                        } else {
+                            toY = isRedMove ? (fromY + dy) : (fromY - dy);
+                        }
+                    } else if (pieceType === PIECE.ELEPHANT) {
+                        // 象走田：dx=2，dy=2
+                        if (action === '进') {
+                            toY = isRedMove ? (fromY - 2) : (fromY + 2);
+                        } else {
+                            toY = isRedMove ? (fromY + 2) : (fromY - 2);
+                        }
+                    } else if (pieceType === PIECE.ADVISOR) {
+                        // 士走斜线：dx=1，dy=1
+                        if (action === '进') {
+                            toY = isRedMove ? (fromY - 1) : (fromY + 1);
+                        } else {
+                            toY = isRedMove ? (fromY + 1) : (fromY - 1);
+                        }
+                    }
                 } else {
                     // 兵/卒
                     if (action === '进') {
@@ -1165,7 +1383,7 @@ var ChineseChess = (function() {
         controlsDiv.style.textAlign = 'center';
 
         var btnPrev = document.createElement('button');
-        btnPrev.textContent = '上一步';
+        btnPrev.textContent = 'Previous';
         btnPrev.style.margin = '0 5px';
         btnPrev.onclick = (function() {
             this.game.back();
@@ -1173,7 +1391,7 @@ var ChineseChess = (function() {
         }).bind(this);
 
         var btnNext = document.createElement('button');
-        btnNext.textContent = '下一步';
+        btnNext.textContent = 'Next';
         btnNext.style.margin = '0 5px';
         btnNext.onclick = (function() {
             this.game.next();
@@ -1181,7 +1399,7 @@ var ChineseChess = (function() {
         }).bind(this);
 
         var btnReset = document.createElement('button');
-        btnReset.textContent = '重置';
+        btnReset.textContent = 'Reset';
         btnReset.style.margin = '0 5px';
         btnReset.onclick = (function() {
             this.game.reset();
@@ -1192,49 +1410,7 @@ var ChineseChess = (function() {
         controlsDiv.appendChild(btnNext);
         controlsDiv.appendChild(btnReset);
 
-        // 添加记录控制
-        var recordDiv = document.createElement('div');
-        recordDiv.style.marginTop = '8px';
-
-        // 状态指示
-        this.statusSpan = document.createElement('span');
-        this.statusSpan.style.padding = '4px 8px';
-        this.statusSpan.style.borderRadius = '4px';
-        this.updateRecordingStatus();
-
-        var btnRecordToggle = document.createElement('button');
-        btnRecordToggle.textContent = this.game.isRecording() ? '结束记录' : '开始记录';
-        btnRecordToggle.style.margin = '0 5px';
-        btnRecordToggle.onclick = (function() {
-            if (this.game.isRecording()) {
-                this.game.stopRecording();
-            } else {
-                this.game.startRecording();
-            }
-            this.updateRecordingStatus();
-            btnRecordToggle.textContent = this.game.isRecording() ? '结束记录' : '开始记录';
-            this.render();
-        }).bind(this);
-
-        recordDiv.appendChild(this.statusSpan);
-        recordDiv.appendChild(btnRecordToggle);
-        controlsDiv.appendChild(document.createElement('br'));
-        controlsDiv.appendChild(recordDiv);
-
         this.container.appendChild(controlsDiv);
-    };
-
-    Renderer.prototype.updateRecordingStatus = function() {
-        if (!this.statusSpan) return;
-        if (this.game.isRecording()) {
-            this.statusSpan.textContent = '● 正在记录';
-            this.statusSpan.style.backgroundColor = '#e6ffed';
-            this.statusSpan.style.color = '#2da44e';
-        } else {
-            this.statusSpan.textContent = '○ 已归档（只读）';
-            this.statusSpan.style.backgroundColor = '#fff1f0';
-            this.statusSpan.style.color = '#cf1322';
-        }
     };
 
     Renderer.prototype.coordToPixel = function(x, y) {
@@ -1787,8 +1963,8 @@ var ChineseChess = (function() {
         // 棋子名称
         var pieceChar = pieceNames[piece.type][isRed ? 1 : 0];
         
-        // 检查同列是否有多个同类型同色棋子（需要加"前"或"后"）
-        var positionPrefix = '';
+        // 优先使用走子前保存的位置前缀
+        var positionPrefix = move.positionPrefix || '';
         var useExplicitColumn = false;
         
         if (game && game.board) {
